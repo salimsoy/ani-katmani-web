@@ -2,6 +2,17 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import type { Order } from "../types";
+import LoadingState from "../components/LoadingState";
+import { Package } from "lucide-react";
+
+const STATUS_COLORS: Record<string, string> = {
+  Beklemede: "bg-orange-50 text-orange-500",
+  Hazırlanıyor: "bg-blue-50 text-blue-600",
+  Kargoda: "bg-purple-50 text-purple-600",
+  "Teslim Edildi": "bg-green-50 text-green-600",
+  "İptal Edildi": "bg-red-50 text-red-600",
+  "Sipariş Tamamlandı": "bg-gray-100 text-gray-600",
+};
 
 export default function Orders() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -15,11 +26,16 @@ export default function Orders() {
   }, []);
 
   if (loading) {
-    return <div className="flex justify-center py-20 text-gray-400">Yükleniyor...</div>;
+    return <LoadingState />;
   }
 
   if (orders.length === 0) {
-    return <div className="flex justify-center py-20 text-gray-400">Henüz hiç sipariş vermediniz.</div>;
+    return (
+      <div className="flex flex-col items-center py-20 text-gray-400">
+        <Package size={48} className="mb-4" strokeWidth={1.5} />
+        <p className="font-semibold">Henüz hiç sipariş vermediniz.</p>
+      </div>
+    );
   }
 
   return (
@@ -35,8 +51,12 @@ export default function Orders() {
           >
             <div className="flex justify-between items-center mb-2">
               <span className="font-bold text-gray-900">Sipariş #{order.id}</span>
-              <span className="bg-orange-50 text-orange-500 text-xs font-semibold px-3 py-1 rounded-full">
-                {order.status}
+              <span
+                className={`text-xs font-semibold px-3 py-1 rounded-full ${
+                  STATUS_COLORS[order.overallStatus] ?? "bg-orange-50 text-orange-500"
+                }`}
+              >
+                {order.overallStatus}
               </span>
             </div>
             <p className="text-sm text-gray-400 mb-3">

@@ -1,13 +1,13 @@
 import { Link, useNavigate } from "react-router-dom";
-import { Package, Settings, LogOut } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { Package, Settings, LogOut, MapPin, LogIn, UserPlus } from "lucide-react";
 
 export default function Profile() {
   const { token, firstName, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     navigate("/login");
   }
 
@@ -37,6 +37,18 @@ export default function Profile() {
             <span className="text-orange-500">→</span>
           </Link>
 
+          <Link
+            to="/account"
+            className="flex items-center justify-between bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
+          >
+            <span className="flex items-center gap-3 font-semibold text-gray-900">
+              <MapPin size={20} className="text-orange-500" />
+              Bilgilerim
+            </span>
+            <span className="text-orange-500">→</span>
+          </Link>
+
+
           {isAdmin && (
             <Link
               to="/admin"
@@ -64,14 +76,20 @@ export default function Profile() {
             to="/login"
             className="flex items-center justify-between bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
           >
-            <span className="font-semibold text-gray-900">🔐 Giriş Yap</span>
+            <span className="flex items-center gap-3 font-semibold text-gray-900">
+              <LogIn size={18} className="text-orange-500" />
+              Giriş Yap
+            </span>
             <span className="text-orange-500">→</span>
           </Link>
           <Link
             to="/register"
             className="flex items-center justify-between bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
           >
-            <span className="font-semibold text-gray-900">✨ Kayıt Ol</span>
+            <span className="flex items-center gap-3 font-semibold text-gray-900">
+              <UserPlus size={18} className="text-orange-500" />
+              Kayıt Ol
+            </span>
             <span className="text-orange-500">→</span>
           </Link>
         </div>

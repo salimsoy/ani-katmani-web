@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { PLACEHOLDER_IMAGE } from "../api/placeholderImage";
 import type { FavoriteItem } from "../types";
+import { Heart, Search, Ruler } from "lucide-react";
+import LoadingState from "../components/LoadingState";
 
 export default function Favorites() {
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
@@ -36,7 +38,7 @@ export default function Favorites() {
   });
 
   if (loading) {
-    return <div className="flex justify-center py-20 text-gray-400">Yükleniyor...</div>;
+    return <LoadingState />;
   }
 
   return (
@@ -45,7 +47,7 @@ export default function Favorites() {
 
       {favorites.length === 0 ? (
         <div className="flex flex-col items-center py-20">
-          <span className="text-5xl mb-4">🤍</span>
+          <Heart size={56} className="text-gray-300 mb-4" />
           <p className="text-lg font-bold text-gray-900 mb-1">Henüz favori ürününüz yok</p>
           <p className="text-gray-500">Beğendiğiniz ürünlere kalp ikonuna dokunun</p>
         </div>
@@ -61,32 +63,54 @@ export default function Favorites() {
 
           {filtered.length === 0 ? (
             <div className="flex flex-col items-center py-20">
-              <span className="text-5xl mb-4">🔍</span>
+              <Search size={48} className="text-gray-300 mb-4" strokeWidth={1.5} />
               <p className="text-lg font-bold text-gray-900 mb-1">Arama sonucu bulunamadı</p>
               <p className="text-gray-500">Farklı bir kelime deneyin</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
               {filtered.map((item) => (
-                <div key={item.id} className="flex items-center gap-4 bg-white rounded-2xl p-3 shadow-sm">
-                  <Link to={`/product/${item.figurineId}`} className="flex items-center gap-4 flex-1 min-w-0">
+                <Link
+                  key={item.id}
+                  to={`/product/${item.figurineId}`}
+                  className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow relative"
+                >
+                  <div className="relative aspect-square bg-gray-100">
                     <img
                       src={item.figurine?.imageUrl || PLACEHOLDER_IMAGE}
-                      alt={item.figurine?.name}
-                      className="w-16 h-16 rounded-xl object-cover bg-gray-100 shrink-0"
+                      alt={item.figurine?.name || "Ürün bulunamadı"}
+                      className="w-full h-full object-cover"
                     />
-                    <div className="min-w-0">
-                      <p className="font-bold text-gray-900 truncate">{item.figurine?.name}</p>
-                      <p className="text-orange-500 font-extrabold">{item.figurine?.price} ₺</p>
-                      <p className="text-xs text-gray-400">
-                        {item.figurine?.filamentType} • {item.figurine?.scale}
-                      </p>
-                    </div>
-                  </Link>
-                  <button onClick={() => removeFavorite(item.figurineId)} className="p-2 text-xl shrink-0">
-                    ❤️
-                  </button>
-                </div>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        removeFavorite(item.figurineId);
+                      }}
+                      className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
+                    >
+                      <Heart size={16} className="text-red-500" fill="currentColor" />
+                    </button>
+                    {item.figurine?.filamentType && (
+                      <span className="absolute top-2 left-2 bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                        {item.figurine.filamentType}
+                      </span>
+                    )}
+                  </div>
+                  <div className="p-3">
+                    <p className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1">
+                      {item.figurine?.name || "Bu ürün artık mevcut değil"}
+                    </p>
+                    {item.figurine && (
+                      <>
+                        <p className="font-display text-orange-600 font-bold">{item.figurine.price} ₺</p>
+                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                          <Ruler size={12} />
+                          {item.figurine.scale}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </Link>
               ))}
             </div>
           )}

@@ -1,209 +1,278 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../../api/client";
-import type { Order } from "../../types";
+import type { AdminOrder, PaginatedResponse } from "../../types";
+import { Eye } from "lucide-react";
 
-const STATUS_OPTIONS = ["Beklemede", "Hazırlanıyor", "Kargoda", "Teslim Edildi"];
+const STATUS_OPTIONS = ["Beklemede", "Hazırlanıyor", "Kargoda", "Teslim Edildi", "İptal Edildi"];
 
-const STATUS_COLORS: Record<string, string> = {
-  Beklemede: "#ff9800",
-  Hazırlanıyor: "#2196f3",
-  Kargoda: "#9c27b0",
-  "Teslim Edildi": "#27ae60",
+const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
+  Beklemede: { bg: "bg-yellow-50", text: "text-yellow-700" },
+  Hazırlanıyor: { bg: "bg-blue-50", text: "text-blue-700" },
+  Kargoda: { bg: "bg-purple-50", text: "text-purple-700" },
+  "Teslim Edildi": { bg: "bg-green-50", text: "text-green-700" },
+  "İptal Edildi": { bg: "bg-red-50", text: "text-red-700" },
 };
 
-export default function AdminOrders() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
+const PAGE_SIZE = 20;
 
-  const [searchTerm, setSearchTerm] = useState("");
+export default function AdminOrders() {
+  const navigate = useNavigate();
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  const [searchInput, setSearchInput] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Tümü");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  function fetchOrders() {
-    setLoading(true);
-    apiFetch<Order[]>("/orders/admin")
-      .then(setOrders)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }
+  async function fetchOrders(pageToFetch: number, isNewSearch: boolean) {
+    if (isNewSearch) setSearching(true);
+    else setLoadingMore(true);
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
+    const params = new URLSearchParams();
+    if (appliedSearch.trim()) params.append("search", appliedSearch.trim());
+    if (statusFilter !== "Tümü") params.append("status", statusFilter);
+    if (dateFrom) params.append("dateFrom", dateFrom);
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      params.append("dateTo", to.toISOString());
+    }
+    params.append("page", String(pageToFetch));
+    params.append("pageSize", String(PAGE_SIZE));
 
-  async function updateStatus(orderId: number, newStatus: string) {
     try {
-      await apiFetch(`/orders/${orderId}/status`, {
-        method: "PUT",
-        body: JSON.stringify({ status: newStatus }),
-      });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o)));
-    } catch {
-      window.alert("Durum güncellenemedi.");
+      const data = await apiFetch<PaginatedResponse<AdminOrder>>(`/orders/admin?${params.toString()}`);
+      setOrders((prev) => (isNewSearch ? data.items : [...prev, ...data.items]));
+      setTotalCount(data.totalCount);
+      setPage(pageToFetch);
+    } catch (err) {
+      console.error("Siparişler çekilemedi:", err);
+    } finally {
+      setInitialLoading(false);
+      setSearching(false);
+      setLoadingMore(false);
     }
   }
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      if (searchTerm.trim()) {
-        const term = searchTerm.trim().toLowerCase();
-        const matchesName = order.fullName.toLowerCase().includes(term);
-        const matchesId = order.id.toString().includes(term);
-        if (!matchesName && !matchesId) return false;
-      }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchOrders(1, true);
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedSearch, statusFilter, dateFrom, dateTo]);
 
-      if (statusFilter !== "Tümü" && order.status !== statusFilter) return false;
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAppliedSearch(searchInput);
+  }
 
-      const orderDate = new Date(order.createdAt);
-      if (dateFrom && orderDate < new Date(dateFrom)) return false;
-      if (dateTo) {
-        const to = new Date(dateTo);
-        to.setHours(23, 59, 59, 999); // gün sonuna kadar dahil et
-        if (orderDate > to) return false;
-      }
-
-      return true;
-    });
-  }, [orders, searchTerm, statusFilter, dateFrom, dateTo]);
+  function handleLoadMore() {
+    if (!loadingMore && orders.length < totalCount) {
+      fetchOrders(page + 1, false);
+    }
+  }
 
   function clearFilters() {
-    setSearchTerm("");
+    setSearchInput("");
+    setAppliedSearch("");
     setStatusFilter("Tümü");
     setDateFrom("");
     setDateTo("");
   }
 
-  const hasActiveFilters = searchTerm || statusFilter !== "Tümü" || dateFrom || dateTo;
-
-  if (loading) {
-    return <div className="flex justify-center py-20 text-gray-400">Yükleniyor...</div>;
-  }
+  const hasActiveFilters = appliedSearch || statusFilter !== "Tümü" || dateFrom || dateTo;
+  const hasMore = orders.length < totalCount;
 
   return (
     <div>
-      <h1 className="text-2xl font-extrabold text-gray-900 mb-6">Sipariş Yönetimi</h1>
+      {/* Filtre kutusu */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_180px_160px_160px_auto] gap-3 items-end">
+          <form onSubmit={handleSearchSubmit} className="min-w-0">
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+              Müşteri adı / Sipariş no
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSearchInput(value);
+                  if (value === "") {
+                    setAppliedSearch("");
+                  }
+                }}
+                placeholder="Ara..."
+                className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+              <button
+                type="submit"
+                className="shrink-0 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+              >
+                Ara
+              </button>
+            </div>
+          </form>
 
-      <div className="bg-white rounded-2xl p-4 shadow-sm mb-6 flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-[180px]">
-          <label className="text-xs font-semibold text-gray-600 block mb-1.5">Müşteri adı / Sipariş no</label>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Ara..."
-            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
+          <div className="min-w-0">
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">Durum</label>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="Tümü">Tümü</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="min-w-0">
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">Başlangıç</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+
+          <div className="min-w-0">
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">Bitiş</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+
+          {hasActiveFilters ? (
+            <button
+              onClick={clearFilters}
+              className="text-sm text-gray-500 hover:text-gray-800 underline px-1 py-2 justify-self-start whitespace-nowrap"
+            >
+              Filtreleri temizle
+            </button>
+          ) : (
+            <div className="hidden lg:block" />
+          )}
         </div>
-
-        <div className="min-w-[160px]">
-          <label className="text-xs font-semibold text-gray-600 block mb-1.5">Durum</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          >
-            <option value="Tümü">Tümü</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-600 block mb-1.5">Başlangıç</label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-semibold text-gray-600 block mb-1.5">Bitiş</label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
-        </div>
-
-        {hasActiveFilters && (
-          <button onClick={clearFilters} className="text-sm text-gray-500 hover:text-gray-800 underline px-1 py-2">
-            Filtreleri temizle
-          </button>
-        )}
       </div>
 
-      <p className="text-sm text-gray-400 mb-4">
-        {filteredOrders.length} / {orders.length} sipariş gösteriliyor
-      </p>
-
-      {filteredOrders.length === 0 ? (
-        <p className="text-center text-gray-400 py-10">Filtreye uyan sipariş yok.</p>
+      {initialLoading ? (
+        <div className="flex justify-center py-20 text-gray-400">Yükleniyor...</div>
       ) : (
-        <div className="space-y-4">
-          {filteredOrders.map((order) => {
-            const color = STATUS_COLORS[order.status] ?? "#999";
-            return (
-              <div key={order.id} className="bg-white rounded-2xl p-5 shadow-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-bold text-gray-900">Sipariş #{order.id}</span>
-                  <span
-                    className="text-xs font-bold px-3 py-1 rounded-lg"
-                    style={{ backgroundColor: `${color}22`, color }}
-                  >
-                    {order.status}
-                  </span>
-                </div>
+        <>
+          <p className="text-sm text-gray-500 mb-4">
+            {searching ? "Aranıyor..." : `${totalCount} sipariş bulundu`}
+          </p>
 
-                <p className="text-sm font-semibold text-gray-800">{order.fullName}</p>
-                <p className="text-sm text-gray-500">{order.phoneNumber}</p>
-                <p className="text-sm text-gray-500 mb-1">{order.address}</p>
-                <p className="text-xs text-gray-400 mb-1">
-                  {new Date(order.createdAt).toLocaleDateString("tr-TR")}
-                </p>
-                {order.user?.email && <p className="text-sm text-orange-500">{order.user.email}</p>}
-
-                <div className="border-t border-gray-100 my-3" />
-
-                {order.orderItems.map((item) => (
-                  <p key={item.id} className="text-sm text-gray-600">
-                    • {item.figurine?.name} x{item.quantity} — {(item.unitPrice * item.quantity).toFixed(2)} ₺
-                  </p>
-                ))}
-
-                <p className="font-extrabold text-gray-900 mt-2">Toplam: {order.totalPrice.toFixed(2)} ₺</p>
-
-                <div className="border-t border-gray-100 my-3" />
-
-                <p className="text-xs font-semibold text-gray-600 mb-2">Durumu Değiştir:</p>
-                <div className="flex flex-wrap gap-2">
-                  {STATUS_OPTIONS.map((status) => {
-                    const active = order.status === status;
-                    const statusColor = STATUS_COLORS[status];
+          {/* Tablo */}
+          <div
+            className={`bg-white rounded-2xl shadow-sm overflow-hidden transition-opacity ${
+              searching ? "opacity-50" : "opacity-100"
+            }`}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-4 py-3">Sipariş No</th>
+                    <th className="px-4 py-3">Müşteri</th>
+                    <th className="px-4 py-3">Tarih</th>
+                    <th className="px-4 py-3">Tutar</th>
+                    <th className="px-4 py-3">Durum</th>
+                    <th className="px-4 py-3 text-right">İşlem</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {orders.length === 0 && !searching && (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                        Filtreye uyan sipariş yok.
+                      </td>
+                    </tr>
+                  )}
+                  {orders.map((order) => {
+                    const colors = STATUS_COLORS[order.status] ?? {
+                      bg: "bg-gray-100",
+                      text: "text-gray-700",
+                    };
                     return (
-                      <button
-                        key={status}
-                        onClick={() => updateStatus(order.id, status)}
-                        style={active ? { backgroundColor: statusColor, borderColor: statusColor } : undefined}
-                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                          active ? "text-white" : "border-gray-200 text-gray-500"
-                        }`}
+                      <tr
+                        key={order.id}
+                        onClick={() => navigate(`/admin-orders/${order.id}`)}
+                        className="hover:bg-gray-50 cursor-pointer"
                       >
-                        {status}
-                      </button>
+                        <td className="px-4 py-3 font-bold text-gray-900">#{order.id}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-900">{order.fullName}</span>
+                            {!order.userId && (
+                              <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                MİSAFİR
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                          {new Date(order.createdAt).toLocaleDateString("tr-TR")}
+                        </td>
+                        <td className="px-4 py-3 font-extrabold text-gray-900 whitespace-nowrap">
+                          {order.totalPrice.toFixed(2)} ₺
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center rounded-full ${colors.bg} px-2.5 py-1 text-xs font-semibold ${colors.text}`}
+                          >
+                            {order.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/admin-orders/${order.id}`);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-gray-900 text-white text-xs font-semibold px-3 py-1.5 hover:bg-gray-800"
+                          >
+                            <Eye size={12} />
+                            Detay
+                          </button>
+                        </td>
+                      </tr>
                     );
                   })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {hasMore && (
+            <div className="flex justify-center mt-6">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="rounded-xl border border-gray-300 px-6 py-2.5 text-sm font-semibold hover:bg-gray-100 disabled:opacity-50"
+              >
+                {loadingMore ? "Yükleniyor..." : "Daha Fazla Yükle"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../api/client";
 import type { Coupon } from "../../types";
+import { Pencil, Trash2, Ticket } from "lucide-react";
 
 const emptyForm = {
   code: "",
@@ -45,7 +46,7 @@ export default function AdminCoupons() {
       discountType: item.discountType,
       discountValue: String(item.discountValue),
       minimumCartAmount: item.minimumCartAmount ? String(item.minimumCartAmount) : "",
-      expiryDate: item.expiryDate ? item.expiryDate.slice(0, 10) : "", // ISO string -> yyyy-MM-dd (date input formatı)
+      expiryDate: item.expiryDate ? item.expiryDate.slice(0, 10) : "",
       isActive: item.isActive,
     });
     setError(null);
@@ -71,7 +72,7 @@ export default function AdminCoupons() {
       if (editingId) {
         await apiFetch(`/coupons/${editingId}`, { method: "PUT", body: JSON.stringify(body) });
       } else {
-        // Create endpoint isActive almıyor (Coupon entity'sinde default true), o yüzden göndermiyoruz
+        // Create endpoint isActive almıyor (Coupon entity'sinde default true)
         const { isActive: _isActive, ...createBody } = body;
         void _isActive;
         await apiFetch("/coupons", { method: "POST", body: JSON.stringify(createBody) });
@@ -114,6 +115,11 @@ export default function AdminCoupons() {
     }
   }
 
+  function isExpired(expiryDate: string | null | undefined): boolean {
+    if (!expiryDate) return false;
+    return new Date(expiryDate) < new Date();
+  }
+
   if (loading) {
     return <div className="flex justify-center py-20 text-gray-400">Yükleniyor...</div>;
   }
@@ -121,7 +127,7 @@ export default function AdminCoupons() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-extrabold text-gray-900">Kupon Yönetimi</h1>
+        <p className="text-sm text-gray-500">{coupons.length} kupon</p>
         <button
           onClick={openAddModal}
           className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
@@ -130,72 +136,97 @@ export default function AdminCoupons() {
         </button>
       </div>
 
-      {coupons.length === 0 ? (
-        <p className="text-center text-gray-400 py-10">Henüz kupon oluşturulmamış.</p>
-      ) : (
-        <div className="space-y-3">
-          {coupons.map((item) => (
-            <div
-              key={item.id}
-              className={`flex justify-between items-center bg-white rounded-2xl p-4 shadow-sm ${
-                !item.isActive ? "opacity-60" : ""
-              }`}
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="font-extrabold text-gray-900 tracking-wide">{item.code}</p>
-                  {!item.isActive && (
-                    <span className="text-[10px] font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                      PASİF
-                    </span>
-                  )}
-                </div>
-                <p className="text-orange-500 font-bold text-sm">
-                  {item.discountType === "Percentage" ? `%${item.discountValue} indirim` : `${item.discountValue} ₺ indirim`}
-                </p>
-                {item.minimumCartAmount > 0 && (
-                  <p className="text-xs text-gray-400">Min. sepet: {item.minimumCartAmount} ₺</p>
-                )}
-                {item.expiryDate && (
-                  <p className="text-xs text-gray-400">
-                    Son kullanma: {new Date(item.expiryDate).toLocaleDateString("tr-TR")}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => handleToggleActive(item)}
-                  disabled={togglingId === item.id}
-                  title={item.isActive ? "Pasif yap" : "Aktif yap"}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${
-                    item.isActive ? "bg-orange-500" : "bg-gray-300"
-                  } ${togglingId === item.id ? "opacity-50" : ""}`}
-                >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                      item.isActive ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-                <button
-                  onClick={() => openEditModal(item)}
-                  className="rounded-lg bg-gray-900 text-white text-xs font-semibold px-3 py-1.5"
-                >
-                  Düzenle
-                </button>
-                <button
-                  onClick={() => handleDelete(item.id, item.code)}
-                  className="rounded-lg bg-red-50 text-red-500 text-xs font-semibold px-3 py-1.5"
-                >
-                  Sil
-                </button>
-              </div>
-            </div>
-          ))}
+      {/* Tablo */}
+      <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3">Kod</th>
+                <th className="px-4 py-3">İndirim</th>
+                <th className="px-4 py-3">Min. Sepet</th>
+                <th className="px-4 py-3">Son Kullanma</th>
+                <th className="px-4 py-3">Durum</th>
+                <th className="px-4 py-3 text-right">İşlem</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {coupons.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                    <Ticket size={32} className="mx-auto mb-2 text-gray-300" />
+                    Henüz kupon oluşturulmamış.
+                  </td>
+                </tr>
+              )}
+              {coupons.map((item) => {
+                const expired = isExpired(item.expiryDate);
+                return (
+                  <tr key={item.id} className={`hover:bg-gray-50 ${!item.isActive ? "opacity-60" : ""}`}>
+                    <td className="px-4 py-3">
+                      <span className="font-bold text-gray-900 tracking-wide">{item.code}</span>
+                    </td>
+                    <td className="px-4 py-3 text-orange-500 font-semibold whitespace-nowrap">
+                      {item.discountType === "Percentage"
+                        ? `%${item.discountValue}`
+                        : `${item.discountValue} ₺`}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                      {item.minimumCartAmount > 0 ? `${item.minimumCartAmount} ₺` : "—"}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {item.expiryDate ? (
+                        <span className={expired ? "text-red-600 font-semibold" : "text-gray-600"}>
+                          {new Date(item.expiryDate).toLocaleDateString("tr-TR")}
+                          {expired && " (süresi doldu)"}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">Süresiz</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleToggleActive(item)}
+                        disabled={togglingId === item.id}
+                        title={item.isActive ? "Pasif yap" : "Aktif yap"}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${
+                          item.isActive ? "bg-orange-500" : "bg-gray-300"
+                        } ${togglingId === item.id ? "opacity-50" : ""}`}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                            item.isActive ? "translate-x-5" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => openEditModal(item)}
+                          className="rounded-lg bg-gray-900 text-white text-xs font-semibold px-3 py-1.5 flex items-center gap-1 hover:bg-gray-800"
+                        >
+                          <Pencil size={12} />
+                          Düzenle
+                        </button>
+                        <button
+                          onClick={() => handleDelete(item.id, item.code)}
+                          className="rounded-lg bg-red-50 text-red-500 text-xs font-semibold px-3 py-1.5 flex items-center gap-1 hover:bg-red-100"
+                        >
+                          <Trash2 size={12} />
+                          Sil
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
+      {/* Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6">
@@ -257,7 +288,9 @@ export default function AdminCoupons() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Minimum Sepet Tutarı (₺)</label>
+                <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+                  Minimum Sepet Tutarı (₺)
+                </label>
                 <input
                   type="number"
                   value={form.minimumCartAmount}
@@ -268,7 +301,9 @@ export default function AdminCoupons() {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-gray-600 block mb-1.5">Son Kullanma Tarihi</label>
+                <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+                  Son Kullanma Tarihi
+                </label>
                 <input
                   type="date"
                   value={form.expiryDate}
@@ -305,7 +340,10 @@ export default function AdminCoupons() {
             >
               {editingId ? "Güncelle" : "Kaydet"}
             </button>
-            <button onClick={() => setModalOpen(false)} className="w-full text-center text-gray-500 py-3 mt-2">
+            <button
+              onClick={() => setModalOpen(false)}
+              className="w-full text-center text-gray-500 py-3 mt-2"
+            >
               İptal
             </button>
           </div>

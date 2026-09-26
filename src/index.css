@@ -1,1 +1,95 @@
 @import "tailwindcss";
+
+@theme {
+  /* Sıcak nötr skala — Tailwind'in soğuk varsayılan gray'ini değiştirir,
+     böylece tüm uygulama (admin/satıcı panelleri dahil) tek noktadan ısınır */
+  --color-gray-50: #fbf9f6;
+  --color-gray-100: #f3eee7;
+  --color-gray-200: #e5ded3;
+  --color-gray-300: #d3c9ba;
+  --color-gray-400: #a69c8c;
+  --color-gray-500: #7d7468;
+  --color-gray-600: #5c5449;
+  --color-gray-700: #443f37;
+  --color-gray-800: #2e2b26;
+  --color-gray-900: #1c1a17;
+
+  /* "Kil" turuncusu — stok Tailwind orange'ın yerine derinleştirilmiş, toprak tonlu bir vurgu */
+  --color-orange-50: #fcf0e6;
+  --color-orange-100: #f9dfc7;
+  --color-orange-200: #f2be93;
+  --color-orange-300: #ea9b60;
+  --color-orange-400: #e67e36;
+  --color-orange-500: #e8630c;
+  --color-orange-600: #c24f09;
+  --color-orange-700: #9a3e08;
+  --color-orange-800: #742f07;
+
+  /* Marka için ek anlamsal token'lar */
+  --color-paper: #fbf8f3;
+  --color-ink: #1c1a17;
+  --color-spool: #2b6e63;
+  --color-spool-light: #e1eeeb;
+  --color-line: #e3ddd2;
+
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-paper);
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Hero'daki "katman" imza animasyonu — baskı katmanlarının sırayla oluşması gibi */
+@keyframes layer-rise {
+  from {
+    transform: scaleX(0.35);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+.animate-layer-rise {
+  animation: layer-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: left center;
+}
+
+/* Ortak yükleniyor göstergesi — baskı kafası gibi dikey katmanlar */
+@keyframes layer-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.4);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.animate-layer-pulse {
+  animation: layer-pulse 0.9s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

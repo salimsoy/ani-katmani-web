@@ -4,7 +4,9 @@ import { apiFetch } from "../api/client";
 import { PLACEHOLDER_IMAGE } from "../api/placeholderImage";
 import { useAuth } from "../context/AuthContext";
 import type { Figurine, FavoriteItem, PaginatedResponse } from "../types";
-import { Search } from "lucide-react";
+import { Search, Heart, Star, Ruler, Check } from "lucide-react";
+import LoadingState from "../components/LoadingState";
+import LayerStack from "../components/LayerStack";
 
 const PAGE_SIZE = 20;
 
@@ -16,6 +18,14 @@ const SORT_LABELS: Record<SortOption, string> = {
   priceDesc: "Fiyat: Yüksekten Düşüğe",
   nameAsc: "İsim: A-Z",
 };
+
+// Ürün kartındaki filament şeridi — gerçek malzeme verisinden türetilen, tutarlı bir renk
+const SWATCH_COLORS = ["#E8630C", "#2B6E63", "#C24F09", "#9A3E08", "#5C5449", "#E67E36"];
+function swatchColorFor(text: string) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return SWATCH_COLORS[hash % SWATCH_COLORS.length];
+}
 
 export default function Home() {
   const { token } = useAuth();
@@ -103,8 +113,8 @@ export default function Home() {
       return;
     }
     apiFetch<FavoriteItem[]>("/favorites")
-      .then((data) => setFavoriteIds(data.map((f) => f.figurineId)))
-      .catch(() => {});
+    .then((data) => setFavoriteIds(data.map((f) => f.figurineId)))
+    .catch(() => {});
   }, [token]);
 
   function handleSearchSubmit(e: SubmitEvent<HTMLFormElement>) {
@@ -147,10 +157,22 @@ export default function Home() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-extrabold text-gray-900">Anı Katmanı 3D</h1>
-        <p className="text-gray-500 text-sm mt-1">Sana özel 3D figürler</p>
-      </div>
+      <section className="relative overflow-hidden rounded-3xl bg-ink text-paper mb-8 px-6 py-10 sm:px-10 sm:py-14">
+        <div className="relative z-10 max-w-md">
+          <p className="font-display text-xs font-bold uppercase tracking-[0.2em] text-orange-400 mb-3">
+            Katman katman, anı anı
+          </p>
+          <h1 className="font-display text-3xl sm:text-4xl font-bold leading-tight mb-4">
+            Anılarını elle tutulur hale getir.
+          </h1>
+          <p className="text-gray-300 text-sm sm:text-base leading-relaxed">
+            Bağımsız üreticilerin bastığı, sana özel 3D figürler. Her biri sıfırdan, senin için
+            katman katman şekilleniyor.
+          </p>
+        </div>
+
+        <LayerStack className="absolute right-8 top-1/2 -translate-y-1/2 hidden sm:flex" />
+      </section>
 
       <form onSubmit={handleSearchSubmit} className="flex gap-2 mb-4">
         <input
@@ -278,7 +300,7 @@ export default function Home() {
                       }`}
                     >
                       {SORT_LABELS[opt]}
-                      {sortBy === opt && <span>✓</span>}
+                      {sortBy === opt && <Check size={14} />}
                     </button>
                   ))}
                 </div>
@@ -287,46 +309,75 @@ export default function Home() {
           </div>
 
           {loading ? (
-            <div className="flex justify-center py-20 text-gray-400">Yükleniyor...</div>
+            <LoadingState />
           ) : figurines.length === 0 ? (
             <div className="text-center py-20 text-gray-400">Ürün bulunamadı.</div>
           ) : (
             <>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {figurines.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={`/product/${item.id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow relative"
-                  >
-                    <div className="relative aspect-square bg-gray-100">
-                      <img
-                        src={item.imageUrl || PLACEHOLDER_IMAGE}
-                        alt={item.name}
-                        className="w-full h-full object-cover"
+                {figurines.map((item) => {
+                  const outOfStock = (item.stock ?? 0) === 0;
+                  return (
+                    <Link
+                      key={item.id}
+                      to={`/product/${item.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow relative"
+                    >
+                      <div
+                        className="h-1.5 w-full"
+                        style={{ backgroundColor: swatchColorFor(item.filamentType) }}
+                        aria-hidden="true"
                       />
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          toggleFavorite(item.id);
-                        }}
-                        className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
-                      >
-                        {favoriteIds.includes(item.id) ? "❤️" : "🤍"}
-                      </button>
-                      <span className="absolute top-2 left-2 bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                        {item.filamentType}
-                      </span>
-                    </div>
-                    <div className="p-3">
-                      <p className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1">{item.name}</p>
-                      <p className="text-orange-500 font-extrabold">{item.price} ₺</p>
-                      <p className="text-xs text-gray-400 mt-1">📐 {item.scale}</p>
-                    </div>
-                  </Link>
-                ))}
+                      <div className="relative aspect-square bg-gray-100">
+                        <img
+                          src={item.imageUrl || PLACEHOLDER_IMAGE}
+                          alt={item.name}
+                          className={`w-full h-full object-cover ${outOfStock ? "opacity-60" : ""}`}
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            toggleFavorite(item.id);
+                          }}
+                          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
+                        >
+                          <Heart
+                            size={16}
+                            className={favoriteIds.includes(item.id) ? "text-red-500" : "text-gray-400"}
+                            fill={favoriteIds.includes(item.id) ? "currentColor" : "none"}
+                          />
+                        </button>
+                        <span className="absolute top-2 left-2 bg-black/60 text-white text-[11px] font-semibold px-2 py-0.5 rounded-full">
+                          {item.filamentType}
+                        </span>
+
+                        {outOfStock && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span className="bg-red-500 text-white text-sm font-extrabold px-4 py-1.5 rounded-full shadow-lg">
+                              Tükendi
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <p className="text-sm font-semibold text-gray-900 line-clamp-2 mb-1">{item.name}</p>
+                        <p className="font-display text-orange-600 font-bold">{item.price} ₺</p>
+                        {item.averageRating != null && (
+                          <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                            <Star size={12} className="text-yellow-400" fill="currentColor" />
+                            {item.averageRating.toFixed(1)} ({item.reviewCount})
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                          <Ruler size={12} />
+                          {item.scale}
+                        </p>
+                      </div>
+                    </Link>
+                  );
+                })}
               </div>
 
               {hasMore && (

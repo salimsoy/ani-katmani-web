@@ -6,12 +6,14 @@ interface AuthContextType {
   token: string | null;
   userId: number | null;
   firstName: string | null;
+  role: string | null;
   isAdmin: boolean;
+  isSeller: boolean;
   isGuest: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<string>; // token'ı geri döndürüyor (cart merge için lazım olacak)
+  login: (email: string, password: string) => Promise<string>;
   register: (firstName: string, lastName: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   continueAsGuest: () => void;
 }
 
@@ -21,22 +23,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [role, setRole] = useState<string | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const isAdmin = role === "SuperAdmin";
+  const isSeller = role === "Seller";
 
   useEffect(() => {
     const storedToken = localStorage.getItem("token");
     const storedUserId = localStorage.getItem("userId");
     const storedFirstName = localStorage.getItem("firstName");
-    const storedIsAdmin = localStorage.getItem("isAdmin");
+    const storedRole = localStorage.getItem("role");
     const storedIsGuest = localStorage.getItem("isGuest");
 
     if (storedToken) {
       setToken(storedToken);
       setUserId(storedUserId ? Number(storedUserId) : null);
       setFirstName(storedFirstName);
-      setIsAdmin(storedIsAdmin === "true");
+      setRole(storedRole);
     } else if (storedIsGuest === "true") {
       setIsGuest(true);
     }
@@ -45,15 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function persistAuth(data: AuthResponse) {
     localStorage.setItem("token", data.token);
+    localStorage.setItem("refreshToken", data.refreshToken);
     localStorage.setItem("userId", String(data.id));
     localStorage.setItem("firstName", data.firstName);
-    localStorage.setItem("isAdmin", String(data.isAdmin));
+    localStorage.setItem("role", data.role);
     localStorage.removeItem("isGuest");
 
     setToken(data.token);
     setUserId(data.id);
     setFirstName(data.firstName);
-    setIsAdmin(data.isAdmin);
+    setRole(data.role);
     setIsGuest(false);
   }
 
@@ -63,27 +69,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ email, password }),
     });
     persistAuth(data);
-    return data.token; // login sayfası bunu cart merge için kullanacak
+    return data.token;
   }
 
   async function register(firstName: string, lastName: string, email: string, password: string) {
-    // Mobildeki gibi: register sadece başarı/hata döndürüyor, otomatik login yok
     await apiFetch<void>("/auth/register", {
       method: "POST",
       body: JSON.stringify({ firstName, lastName, email, password }),
     });
   }
 
-  function logout() {
+  async function logout() {
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (refreshToken) {
+      try {
+        await apiFetch("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ refreshToken }),
+        });
+      } catch {
+        // Backend'e ulaşılamasa bile local oturumu temizlemeye devam ediyoruz
+      }
+    }
+
     localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
     localStorage.removeItem("userId");
     localStorage.removeItem("firstName");
-    localStorage.removeItem("isAdmin");
+    localStorage.removeItem("role");
     localStorage.removeItem("isGuest");
     setToken(null);
     setUserId(null);
     setFirstName(null);
-    setIsAdmin(false);
+    setRole(null);
     setIsGuest(false);
   }
 
@@ -94,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ token, userId, firstName, isAdmin, isGuest, isLoading, login, register, logout, continueAsGuest }}
+      value={{ token, userId, firstName, role, isAdmin, isSeller, isGuest, isLoading, login, register, logout, continueAsGuest }}
     >
       {children}
     </AuthContext.Provider>

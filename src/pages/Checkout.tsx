@@ -1,11 +1,22 @@
 import { useEffect, useState, type SubmitEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { apiFetch } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
-import type { ShippingOption } from "../types";
+import type { ShippingOption, Address } from "../types";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { toE164 } from "../utils/phone";
+import { luhnCheck, validateExpiry } from "../utils/payment";
 
-// /coupons/validate'in gerçek yanıt şekli types/index.ts'teki CouponValidationResponse ile uyuşmuyor
+import StockWarningBanner from "../components/checkout/StockWarningBanner";
+import OrderSummary from "../components/checkout/OrderSummary";
+import CouponInput from "../components/checkout/CouponInput";
+import PaymentForm from "../components/checkout/PaymentForm";
+import ShippingOptionPicker from "../components/checkout/ShippingOptionPicker";
+import MemberAddressPicker from "../components/checkout/MemberAddressPicker";
+import GuestAddressForm from "../components/checkout/GuestAddressForm";
+import Stepper from "../components/Stepper";
+
 interface CouponValidateResponse {
   message: string;
   couponId: number;
@@ -15,58 +26,104 @@ interface CouponValidateResponse {
 
 export default function Checkout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { token } = useAuth();
   const isGuest = !token;
   const { cartItems, totalPrice: rawTotal, refreshCart, clearCartAfterGuestOrder } = useCart();
 
+  // Misafir alanları
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [address, setAddress] = useState("");
-  const [email, setEmail] = useState(""); // sadece misafirde kullanılıyor
+  const [city, setCity] = useState("");
+  const [district, setDistrict] = useState("");
+  const [selectedProvinceId, setSelectedProvinceId] = useState<number | null>(null);
+  const [addressText, setAddressText] = useState("");
+  const [email, setEmail] = useState("");
 
+  // Üye adres
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [loadingAddresses, setLoadingAddresses] = useState(true);
+  const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
+
+  // Ödeme
   const [cardNumber, setCardNumber] = useState("");
   const [cardName, setCardName] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [cvv, setCvv] = useState("");
 
+  // Kupon
   const [couponCode, setCouponCode] = useState("");
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [couponMessage, setCouponMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
   const [applyingCoupon, setApplyingCoupon] = useState(false);
 
+  // Kargo
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [selectedShippingId, setSelectedShippingId] = useState<number | null>(null);
   const [loadingShipping, setLoadingShipping] = useState(true);
 
+  // Form durumu
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [stockError, setStockError] = useState<string | null>(null);
   const [orderComplete, setOrderComplete] = useState(false);
+
+  // Stok kontrolü
+  const stockIssues = cartItems.filter((item) => {
+    const stock = (item.figurine as { stock?: number })?.stock ?? Infinity;
+    return item.quantity > stock;
+  });
+  const hasStockIssues = stockIssues.length > 0;
 
   useEffect(() => {
     apiFetch<ShippingOption[]>("/shipping-options/active")
       .then((data) => {
         setShippingOptions(data);
-        if (data.length > 0) setSelectedShippingId(data[0].id); // varsayılan olarak ilkini seç
+        if (data.length > 0) setSelectedShippingId(data[0].id);
       })
       .catch(() => {})
       .finally(() => setLoadingShipping(false));
   }, []);
 
+  useEffect(() => {
+    if (isGuest) {
+      setLoadingAddresses(false);
+      return;
+    }
+    apiFetch<Address[]>("/addresses")
+      .then((data) => {
+        setAddresses(data);
+        const passedId = (location.state as { selectedAddressId?: number } | null)?.selectedAddressId;
+        if (passedId) {
+          setSelectedAddressId(passedId);
+        } else {
+          const defaultAddr = data.find((a) => a.isDefault);
+          if (defaultAddr) setSelectedAddressId(defaultAddr.id);
+          else if (data.length > 0) setSelectedAddressId(data[0].id);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingAddresses(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGuest]);
+
+  const selectedAddress = addresses.find((a) => a.id === selectedAddressId) ?? null;
   const selectedShipping = shippingOptions.find((s) => s.id === selectedShippingId) ?? null;
   const shippingCost = selectedShipping?.price ?? 0;
   const finalPrice = rawTotal - discountAmount + shippingCost;
 
-  function formatCardNumber(text: string) {
-    const cleaned = text.replace(/\D/g, "").slice(0, 16);
-    return cleaned.match(/.{1,4}/g)?.join(" ") ?? "";
-  }
-
-  function formatExpiryDate(text: string) {
-    const cleaned = text.replace(/\D/g, "").slice(0, 4);
-    if (cleaned.length >= 3) return `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`;
-    return cleaned;
-  }
+  // Stepper — sadece görsel yönlendirme, formu bölmez
+  const deliveryStepDone = isGuest
+    ? Boolean(fullName && city && district && addressText && phoneNumber)
+    : Boolean(selectedAddress);
+  const paymentStepDone =
+    Boolean(selectedShippingId) && cardNumber.replace(/\s/g, "").length === 16 && cvv.length === 3;
+  const checkoutSteps = [
+    { label: "Teslimat", done: deliveryStepDone },
+    { label: "Kargo & Ödeme", done: paymentStepDone },
+    { label: "Onayla", done: false },
+  ];
 
   async function handleApplyCoupon() {
     if (!couponCode.trim()) return;
@@ -97,9 +154,13 @@ export default function Checkout() {
   }
 
   function validateCardInfo(): string | null {
-    if (cardNumber.replace(/\s/g, "").length !== 16) return "Kart numarası 16 haneli olmalıdır.";
-    if (!cardName.trim()) return "Kart üzerindeki ismi girin.";
-    if (expiryDate.length !== 5) return "Son kullanma tarihini AA/YY formatında girin.";
+    const cardDigits = cardNumber.replace(/\s/g, "");
+    if (cardDigits.length !== 16) return "Kart numarası 16 haneli olmalıdır.";
+    if (!luhnCheck(cardDigits)) return "Kart numarası geçersiz, kontrol edin.";
+    if (cardName.trim().length < 5 || !cardName.trim().includes(" "))
+      return "Kart üzerindeki ismi ad ve soyad olarak girin.";
+    const expErr = validateExpiry(expiryDate);
+    if (expErr) return expErr;
     if (cvv.length !== 3) return "CVV 3 haneli olmalıdır.";
     return null;
   }
@@ -107,15 +168,33 @@ export default function Checkout() {
   async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setFormError(null);
+    setStockError(null);
 
-    if (!fullName || !address || !phoneNumber) {
-      setFormError("Lütfen tüm teslimat bilgilerini eksiksiz doldurun.");
+    if (hasStockIssues) {
+      setStockError(
+        "Sepetinizde stok sorunu olan ürünler var. Devam etmeden önce sepetinize dönün ve düzenleyin."
+      );
       return;
     }
 
-    if (isGuest && !/^\S+@\S+\.\S+$/.test(email)) {
-      setFormError("Lütfen geçerli bir e-posta adresi girin.");
-      return;
+    if (isGuest) {
+      if (!fullName || !city || !district || !addressText || !phoneNumber) {
+        setFormError("Lütfen tüm teslimat bilgilerini eksiksiz doldurun.");
+        return;
+      }
+      if (phoneNumber.length !== 10) {
+        setFormError("Telefon numarası 10 haneli olmalıdır.");
+        return;
+      }
+      if (!/^\S+@\S+\.\S+$/.test(email)) {
+        setFormError("Lütfen geçerli bir e-posta adresi girin.");
+        return;
+      }
+    } else {
+      if (!selectedAddress) {
+        setFormError("Lütfen bir teslimat adresi seçin.");
+        return;
+      }
     }
 
     if (!selectedShippingId) {
@@ -131,14 +210,15 @@ export default function Checkout() {
 
     setSubmitting(true);
     try {
-      // Kart bilgileri hiçbir yere gönderilmiyor, sadece doğrulama simülasyonu
       if (isGuest) {
         await apiFetch("/orders/guest", {
           method: "POST",
           body: JSON.stringify({
             fullName,
-            address,
-            phoneNumber,
+            city,
+            district,
+            addressText,
+            phoneNumber: toE164(phoneNumber),
             email,
             shippingOptionId: selectedShippingId,
             cartItems: cartItems.map((item) => ({
@@ -151,9 +231,7 @@ export default function Checkout() {
         await apiFetch("/orders", {
           method: "POST",
           body: JSON.stringify({
-            fullName,
-            address,
-            phoneNumber,
+            addressId: selectedAddress!.id,
             couponCode: appliedCouponCode,
             shippingOptionId: selectedShippingId,
           }),
@@ -166,16 +244,23 @@ export default function Checkout() {
       }
       setOrderComplete(true);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Sipariş oluşturulamadı.");
+      const message = err instanceof Error ? err.message : "Sipariş oluşturulamadı.";
+      if (message.toLowerCase().includes("adet") || message.toLowerCase().includes("stok")) {
+        setStockError(message);
+        await refreshCart();
+      } else {
+        setFormError(message);
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
+  // Sipariş tamamlandı ekranı
   if (orderComplete) {
     return (
       <div className="max-w-md mx-auto py-16 text-center">
-        <span className="text-5xl mb-4 block">🎉</span>
+        <CheckCircle2 size={56} className="text-green-500 mx-auto mb-4" />
         <h1 className="text-2xl font-extrabold text-gray-900 mb-2">Sipariş Alındı!</h1>
         <p className="text-gray-500 mb-8">
           {isGuest
@@ -202,6 +287,7 @@ export default function Checkout() {
     );
   }
 
+  // Sepet boşsa
   if (cartItems.length === 0) {
     return (
       <div className="max-w-md mx-auto py-16 text-center">
@@ -214,185 +300,109 @@ export default function Checkout() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div>
+      <button
+        onClick={() => navigate("/cart")}
+        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-4"
+      >
+        <ArrowLeft size={16} />
+        Sepete Dön
+      </button>
+
       <h1 className="text-2xl font-extrabold text-gray-900 mb-1">Teslimat Bilgileri</h1>
       <p className="text-gray-500 mb-6">
         {isGuest ? "Misafir olarak sipariş veriyorsunuz." : "Siparişinizin teslim edileceği bilgileri girin"}
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          type="text"
-          placeholder="Ad Soyad"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
-        <input
-          type="tel"
-          placeholder="Telefon Numarası"
-          value={phoneNumber}
-          onChange={(e) => setPhoneNumber(e.target.value)}
-          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
+      <div className="bg-white rounded-2xl p-5 shadow-sm mb-6">
+        <Stepper steps={checkoutSteps} />
+      </div>
 
-        {isGuest && (
-          <input
-            type="email"
-            placeholder="E-posta Adresi"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
-        )}
+      <StockWarningBanner
+        stockIssues={stockIssues}
+        stockError={stockError}
+        onGoToCart={() => navigate("/cart")}
+      />
 
-        <textarea
-          placeholder="Açık Adres"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          rows={3}
-          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
-
-        <h2 className="font-bold text-gray-900 pt-2">🚚 Kargo Seçeneği</h2>
-
-        {loadingShipping ? (
-          <p className="text-sm text-gray-400">Kargo seçenekleri yükleniyor...</p>
-        ) : shippingOptions.length === 0 ? (
-          <p className="text-sm text-red-600">Şu anda kullanılabilir kargo seçeneği yok.</p>
-        ) : (
-          <div className="space-y-2">
-            {shippingOptions.map((option) => (
-              <label
-                key={option.id}
-                className={`flex items-center justify-between rounded-xl border px-4 py-3 cursor-pointer transition-colors ${
-                  selectedShippingId === option.id
-                    ? "border-orange-500 bg-orange-50"
-                    : "border-gray-200 hover:bg-gray-50"
-                }`}
-              >
-                <span className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="shippingOption"
-                    checked={selectedShippingId === option.id}
-                    onChange={() => setSelectedShippingId(option.id)}
-                    className="accent-orange-500"
-                  />
-                  <span className="font-semibold text-gray-900">{option.name}</span>
-                </span>
-                <span className="font-bold text-orange-500">{option.price} ₺</span>
-              </label>
-            ))}
-          </div>
-        )}
-
-        <h2 className="font-bold text-gray-900 pt-2">💳 Ödeme Bilgileri</h2>
-
-        <input
-          type="text"
-          placeholder="Kart Üzerindeki İsim"
-          value={cardName}
-          onChange={(e) => setCardName(e.target.value.toUpperCase())}
-          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
-        <input
-          type="text"
-          placeholder="1234 5678 9012 3456"
-          value={cardNumber}
-          onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-          className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-        />
-        <div className="flex gap-3">
-          <input
-            type="text"
-            placeholder="AA/YY"
-            value={expiryDate}
-            onChange={(e) => setExpiryDate(formatExpiryDate(e.target.value))}
-            className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
-          <input
-            type="password"
-            placeholder="CVV"
-            value={cvv}
-            onChange={(e) => setCvv(e.target.value.replace(/\D/g, "").slice(0, 3))}
-            className="flex-1 rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-          />
-        </div>
-
-        {!isGuest && (
-          <div>
-            {!appliedCouponCode ? (
-              <>
-                <div className="flex">
-                  <input
-                    type="text"
-                    placeholder="İndirim Kodu"
-                    value={couponCode}
-                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                    className="flex-1 rounded-l-xl border border-gray-200 px-4 py-3 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-orange-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleApplyCoupon}
-                    disabled={applyingCoupon}
-                    className="rounded-r-xl bg-gray-900 px-5 font-bold text-white hover:bg-gray-800 disabled:opacity-50"
-                  >
-                    {applyingCoupon ? "..." : "Uygula"}
-                  </button>
-                </div>
-                {couponMessage && (
-                  <p className={`text-sm mt-2 ${couponMessage.type === "error" ? "text-red-600" : "text-green-600"}`}>
-                    {couponMessage.text}
-                  </p>
-                )}
-              </>
-            ) : (
-              <div className="flex justify-between items-center bg-green-50 border border-green-200 rounded-xl p-4">
-                <span className="text-green-700 font-bold">🎉 {appliedCouponCode} uygulandı!</span>
-                <button type="button" onClick={handleRemoveCoupon} className="text-red-500 font-semibold text-sm">
-                  İptal Et
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="bg-white rounded-2xl shadow-sm p-4 space-y-2">
-          {discountAmount > 0 && (
-            <>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Ara Toplam</span>
-                <span className="text-gray-400 line-through">{rawTotal.toFixed(2)} ₺</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">İndirim</span>
-                <span className="text-red-500 font-semibold">- {discountAmount.toFixed(2)} ₺</span>
-              </div>
-            </>
+      <form onSubmit={handleSubmit} className="grid lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 space-y-4">
+          {isGuest ? (
+            <GuestAddressForm
+              fullName={fullName}
+              phoneNumber={phoneNumber}
+              email={email}
+              city={city}
+              district={district}
+              selectedProvinceId={selectedProvinceId}
+              addressText={addressText}
+              onFullNameChange={setFullName}
+              onPhoneNumberChange={setPhoneNumber}
+              onEmailChange={setEmail}
+              onProvinceChange={(id, name) => {
+                setSelectedProvinceId(id);
+                setCity(name);
+                setDistrict("");
+              }}
+              onDistrictChange={setDistrict}
+              onAddressTextChange={setAddressText}
+            />
+          ) : (
+            <MemberAddressPicker
+              addresses={addresses}
+              loading={loadingAddresses}
+              selectedAddressId={selectedAddressId}
+              onSelectAddress={setSelectedAddressId}
+              onNavigateToAddresses={() =>
+                navigate("/addresses", { state: { returnTo: "/checkout" } })
+              }
+            />
           )}
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Kargo{selectedShipping ? ` (${selectedShipping.name})` : ""}</span>
-            <span className="font-semibold text-gray-900">
-              {shippingOptions.length === 0 ? "—" : `${shippingCost.toFixed(2)} ₺`}
-            </span>
-          </div>
-          <div className="flex justify-between border-t border-gray-100 pt-2">
-            <span className="font-bold text-gray-900">Toplam</span>
-            <span className="text-xl font-extrabold text-orange-500">{finalPrice.toFixed(2)} ₺</span>
-          </div>
+
+          <ShippingOptionPicker
+            shippingOptions={shippingOptions}
+            selectedShippingId={selectedShippingId}
+            loading={loadingShipping}
+            onSelect={setSelectedShippingId}
+          />
+
+          <PaymentForm
+            cardNumber={cardNumber}
+            cardName={cardName}
+            expiryDate={expiryDate}
+            cvv={cvv}
+            onCardNumberChange={setCardNumber}
+            onCardNameChange={setCardName}
+            onExpiryDateChange={setExpiryDate}
+            onCvvChange={setCvv}
+          />
+
+          {!isGuest && (
+            <CouponInput
+              couponCode={couponCode}
+              appliedCouponCode={appliedCouponCode}
+              couponMessage={couponMessage}
+              applyingCoupon={applyingCoupon}
+              onCouponCodeChange={setCouponCode}
+              onApply={handleApplyCoupon}
+              onRemove={handleRemoveCoupon}
+            />
+          )}
         </div>
 
-        {formError && <p className="text-sm text-red-600">{formError}</p>}
-
-        <button
-          type="submit"
-          disabled={submitting || shippingOptions.length === 0}
-          className="w-full rounded-xl bg-orange-500 py-3.5 font-bold text-white hover:bg-orange-600 disabled:opacity-50"
-        >
-          {submitting ? "Gönderiliyor..." : "Siparişi Tamamla ✓"}
-        </button>
+        <OrderSummary
+          rawTotal={rawTotal}
+          discountAmount={discountAmount}
+          shippingCost={shippingCost}
+          finalPrice={finalPrice}
+          selectedShipping={selectedShipping}
+          hasShippingOptions={shippingOptions.length > 0}
+          formError={formError}
+          submitting={submitting}
+          disabled={hasStockIssues}
+        />
       </form>
     </div>
   );
 }
+
+
