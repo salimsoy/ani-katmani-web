@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "../../api/client";
 import type { Figurine, FigurineImage } from "../../types";
-import { ImagePlus, Loader2, X, Pencil, Trash2, Star } from "lucide-react";
+import { ImagePlus, Loader2, X, Pencil, Trash2, Star, FileSpreadsheet } from "lucide-react";
+import ImportExcelModal from "../admin/ImportExcelModal";
 
 const emptyForm = {
   name: "",
@@ -19,6 +20,7 @@ export default function SellerProducts() {
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [uploading, setUploading] = useState(false);
@@ -213,13 +215,26 @@ export default function SellerProducts() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <p className="text-sm text-gray-500">{figurines.length} ürün</p>
-        <button
-          onClick={openAddModal}
-          className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
-        >
-          + Ürün Ekle
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setImportModalOpen(true)}
+            className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-1.5"
+          >
+            <FileSpreadsheet size={16} />
+            Excel'den İçe Aktar
+          </button>
+          <button
+            onClick={openAddModal}
+            className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600"
+          >
+            + Ürün Ekle
+          </button>
+        </div>
       </div>
+
+      {importModalOpen && (
+        <ImportExcelModal onClose={() => setImportModalOpen(false)} onSuccess={fetchFigurines} />
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
